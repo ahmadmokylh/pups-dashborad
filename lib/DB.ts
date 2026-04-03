@@ -1,37 +1,45 @@
 import mongoose from 'mongoose';
 
-const MONGODB_URL = process.env.DATABASE_URL_MONGODB!;
-
-if (!MONGODB_URL) {
-  throw new Error('Invalid/Missing environment variable: DATABASE_URL_MONGODB');
-}
-
 interface MongooseCache {
   conn: typeof mongoose | null;
   promise: Promise<typeof mongoose> | null;
 }
 
 declare global {
-  // typed cache on global to survive hot reloads without using `any`
   var __MONGOOSE_CACHE__: MongooseCache | undefined;
 }
 
-let cached = global.__MONGOOSE_CACHE__ as MongooseCache | undefined;
+const cached: MongooseCache = global.__MONGOOSE_CACHE__ ?? {
+  conn: null,
+  promise: null,
+};
 
-if (!cached) {
-  cached = global.__MONGOOSE_CACHE__ = {
-    conn: null,
-    promise: null,
-  };
-}
+global.__MONGOOSE_CACHE__ = cached;
 
 export async function connectDB() {
-  if (cached?.conn) return cached.conn;
+  const MONGODB_URL = process.env.DATABASE_URL_MONGODB;
 
-  if (!cached!.promise) {
-    cached!.promise = mongoose.connect(MONGODB_URL).then((m) => m);
+  if (!MONGODB_URL) {
+    throw new Error('Invalid/Missing environment variable: DATABASE_URL_MONGODB');
   }
 
-  cached!.conn = await cached!.promise;
-  return cached!.conn;
+  if (cached.conn) {
+    console.log('Using cached MongoDB connection');
+    return cached.conn;
+  }
+
+  if (!cached.promise) {
+    console.log('Creating new MongoDB connection...');
+    cached.promise = mongoose.connect(MONGODB_URL);
+  }
+
+  try {
+    cached.conn = await cached.promise;
+    console.log('MongoDB connected successfully');
+    return cached.conn;
+  } catch (error) {
+    cached.promise = null;
+    console.error('MongoDB connection failed:', error);
+    throw error;
+  }
 }
